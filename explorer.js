@@ -572,7 +572,7 @@ function start(){
     var p = fromHash()
     if (p && p != current){
       // make sure the linked specimen's card is not filtered out
-      if (p.el.hidden){
+      if ($("search").value || starredOnly){
         $("search").value = ""
         starredOnly = false
         $("starred-only").setAttribute("aria-pressed","false")
