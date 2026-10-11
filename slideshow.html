@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="main.js"></script>
+    <script src="slideshow.js"></script>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <link rel="stylesheet" type="text/css" href="slideshow.css">
+    <title>Nonflowers Slideshow</title>
+  </head>
+  <body onload="startShow()">
+
+    <div id="loader">
+      <div id="spinner"></div>
+      <div id="load-text">Preparing paper...&nbsp;&nbsp;&nbsp;</div>
+    </div>
+
+    <div id="stage"></div>
+
+    <div id="controls" class="option-bar">
+      <i class="material-icons button" id="btn-pause" title="pause (space)" onclick="togglePause()">pause</i>
+      <a href="index.html"><i class="material-icons button" title="back to generator">home</i></a>
+    </div>
+
+  </body>
+</html>
