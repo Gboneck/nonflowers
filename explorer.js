@@ -26,7 +26,11 @@ function ease(x){return x*x*(3-2*x)}
 function makeWorker(){
   var main = $("src-main"), wk = $("src-worker")
   if (main && wk){
-    var blob = new Blob(["var NONFLOWERS_INLINE = true;\n",main.textContent,"\n",wk.textContent],
+    // the generator needs the worker's stand-in page before it loads
+    var page = "self.window = self;\n"
+      +"self.document = {createElement:function(){return new OffscreenCanvas(300,150)}};\n"
+      +"var NONFLOWERS_INLINE = true;\n"
+    var blob = new Blob([page,main.textContent,"\n",wk.textContent],
       {type:"text/javascript"})
     return new Worker(URL.createObjectURL(blob))
   }
