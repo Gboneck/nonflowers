@@ -52,13 +52,54 @@ var Recorder = new function(){
     return _polygon(args)
   }
 
-  // layers get composited onto the target at an offset; remember it
+  // keep the plant's layers instead of compositing them onto the target,
+  // so the sheet can be sized to fit the whole plant afterwards
   Layer.blit = function(ctx0,ctx1,args){
     if (ops != null && ctx0 == target){
-      var a = (args != undefined) ? args : {};
-      blits.set(ctx1,{xof:a.xof || 0,yof:a.yof || 0,lay:blits.size})
+      blits.set(ctx1,{lay:blits.size})
+      return
     }
     return _blit.apply(this,arguments)
+  }
+
+  // Stems are drawn as flat ribbons of three strips across their width.
+  // Wrap the strips around the spine into a round tube instead: a point
+  // a fraction u across the ribbon sits at angle asin(2u-1) around the
+  // tube, so seen from the front the tube covers the ribbon exactly.
+  var SUB = 4  // facets per strip, on each side of the tube
+  function tube(quads,spine){
+    var out = []
+    for (var q = 0; q < quads.length; q++){
+      var o = quads[q]
+      var i = Math.floor(q/3)+1
+      var m = (q%3)/3
+      var n = m+1/3
+      var p = o.pts // corners: (i-1,m), (i,m), (i,n), (i-1,n)
+      var ends = [[p[0],p[3],spine[i-1][2]],[p[1],p[2],spine[i][2]]].map(function(e){
+        var D = [(e[1][0]-e[0][0])/(n-m),(e[1][1]-e[0][1])/(n-m)]
+        return {
+          C:[e[0][0]-(m-0.5)*D[0],e[0][1]-(m-0.5)*D[1]],
+          D:D,
+          r:Math.sqrt(D[0]*D[0]+D[1]*D[1])/2,
+          z:e[2],
+        }
+      })
+      function at(f,u,side){
+        var s = 2*u-1
+        return [f.C[0]+(u-0.5)*f.D[0],f.C[1]+(u-0.5)*f.D[1],
+          f.z+side*f.r*Math.sqrt(Math.max(0,1-s*s))]
+      }
+      for (var side = -1; side <= 1; side += 2){
+        for (var s = 0; s < SUB; s++){
+          var u0 = m+(n-m)*s/SUB
+          var u1 = m+(n-m)*(s+1)/SUB
+          out.push({ctx:o.ctx,col:o.col,fil:true,pts:[
+            at(ends[0],u0,side),at(ends[1],u0,side),
+            at(ends[1],u1,side),at(ends[0],u1,side)]})
+        }
+      }
+    }
+    return out
   }
 
   // Stems and leaves are built in 3D around the point they grow from, but
@@ -67,7 +108,7 @@ var Recorder = new function(){
   // it later can be placed at the right depth. Outlines drawn in 2D get
   // the depth of the nearest point on their spine.
   function key(x,y){return x+","+y}
-  function track(f){
+  function track(f,isStem){
     return function(args){
       if (ops == null){return f(args)}
       var a = (args != undefined) ? args : {};
@@ -79,6 +120,18 @@ var Recorder = new function(){
       var spine = P.map((p)=>([p[0]+xof,p[1]+yof,(isFinite(p[2]) ? p[2] : 0)+base]))
       for (var i = 0; i < spine.length; i++){
         anchors.set(key(spine[i][0],spine[i][1]),spine[i][2])
+      }
+      if (isStem){
+        // a stem draws its ribbon strips, then an outline on either side
+        var nq = (spine.length-1)*3
+        var quads = ops.slice(i0,i0+nq)
+        if (ops.length-i0 == nq+2 && quads.every((o)=>(o.fil && o.pts.length == 4))){
+          var t = tube(quads,spine)
+          ops.splice(i0,nq,...t)
+          i0 += t.length
+          // the outlines only make sense seen from the front
+          for (var i = i0; i < ops.length; i++){ops[i].flat = true}
+        }
       }
       for (var i = i0; i < ops.length; i++){
         var pts = ops[i].pts
@@ -99,8 +152,8 @@ var Recorder = new function(){
       return P
     }
   }
-  stem = track(stem)
-  leaf = track(leaf)
+  stem = track(stem,true)
+  leaf = track(leaf,false)
 
   this.start = function(ctx){
     ops = []
@@ -108,50 +161,81 @@ var Recorder = new function(){
     anchors = new Map()
     target = ctx
   }
-  // returns strokes in drawing order, in target coordinates,
-  // tagged with the layer they were drawn on (0: stems & leaves, 1: flowers)
+  // returns the plant's layers (stems & leaves, then flowers) and its
+  // strokes in drawing order, in layer coordinates, tagged with their layer
   this.stop = function(){
     var res = []
+    var layers = []
+    blits.forEach(function(b,ctx){layers[b.lay] = ctx})
     for (var i = 0; i < ops.length; i++){
       var o = ops[i]
-      var b = (o.ctx == target) ? {xof:0,yof:0,lay:1} : blits.get(o.ctx)
+      var b = blits.get(o.ctx)
       if (b == undefined){continue}
-      o.pts.forEach((p)=>{p[0]+=b.xof; p[1]+=b.yof})
       o.lay = Math.min(b.lay,1)
       delete o.ctx
       res.push(o)
     }
     ops = null; blits = null; target = null; anchors = null
-    return res
+    return {layers:layers,strokes:res}
   }
 }
 
-// generate a painting: blank sheet, finished artwork, and its 3D strokes
+var SHEET_MIN = 600   // smallest sheet, in generator pixels
+var SHEET_MAX = 1200  // the generator's layers are this big
+var SHEET_PAD = 30    // space between the plant and the edge of the sheet
+
+// generate a painting: blank sheet, finished artwork, and its 3D strokes.
+// The sheet is sized so the whole plant fits, with the plant centred.
 function makePainting(){
-  var sheet = Layer.empty()
-  sheet.fillStyle = "white"
-  sheet.fillRect(0,0,sheet.canvas.width,sheet.canvas.height)
   var ppr = paper({col:PAPER_COL1})
-  for (var i = 0; i < sheet.canvas.width; i+= 512){
-    for (var j = 0; j < sheet.canvas.height; j+= 512){
+  var target = Layer.empty(1)
+  Recorder.start(target)
+  if (Math.random() <= 0.5){
+    woody({ctx:target})
+  }else{
+    herbal({ctx:target})
+  }
+  var rec = Recorder.stop()
+  var strokes = rec.strokes
+
+  var xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity
+  strokes.forEach(function(o){
+    o.pts.forEach(function(p){
+      if (p[0] < xmin){xmin = p[0]} if (p[0] > xmax){xmax = p[0]}
+      if (p[1] < ymin){ymin = p[1]} if (p[1] > ymax){ymax = p[1]}
+    })
+  })
+  if (!isFinite(xmin)){xmin = xmax = ymin = ymax = SHEET_MAX/2}
+  // the sheet's corners are rounded: (x/r)^3 + (y/r)^3 <= 1 inside,
+  // with r = 0.98 of half the sheet, so fit the plant's box in that
+  var a = (xmax-xmin)/2+SHEET_PAD
+  var b = (ymax-ymin)/2+SHEET_PAD
+  var S = Math.ceil(2/0.98*Math.cbrt(a*a*a+b*b*b))
+  S = Math.min(SHEET_MAX,Math.max(SHEET_MIN,S))
+  var ox = S/2-(xmin+xmax)/2
+  var oy = S/2-(ymin+ymax)/2
+  strokes.forEach(function(o){
+    o.pts.forEach(function(p){p[0] += ox; p[1] += oy})
+  })
+
+  var sheet = Layer.empty(S)
+  sheet.fillStyle = "white"
+  sheet.fillRect(0,0,S,S)
+  for (var i = 0; i < S; i+= 512){
+    for (var j = 0; j < S; j+= 512){
       sheet.drawImage(ppr,i,j);
     }
   }
-  var art = Layer.empty()
+  // composite the plant the way the generator does
+  var art = Layer.empty(S)
   art.drawImage(sheet.canvas,0,0)
-
-  Recorder.start(art)
-  if (Math.random() <= 0.5){
-    woody({ctx:art,xof:300,yof:550,})
-  }else{
-    herbal({ctx:art,xof:300,yof:600,})
-  }
-  var strokes = Recorder.stop()
+  art.globalCompositeOperation = "multiply"
+  rec.layers.forEach(function(l){art.drawImage(l.canvas,ox,oy)})
   art.globalCompositeOperation = "source-over"
 
   Layer.border(sheet,squircle(0.98,3))
   Layer.border(art,squircle(0.98,3))
-  return {sheet:sheet,art:art,strokes:strokes}
+  return {sheet:sheet,art:art,strokes:strokes,size:S}
 }
 
 // parse the css colors the generator produces
@@ -163,14 +247,17 @@ function parseRGBA(s){
 
 // turn recorded strokes into vertex buffers, one per layer and kind,
 // with the vertex count reached after each stroke so growth can be replayed
-function buildModel(strokes){
+function buildModel(strokes,S){
   var n = strokes.length
   var groups = []
   for (var g = 0; g < 4; g++){ // fills of layer 0, 1, lines of layer 0, 1
     groups.push({count:0,at:0,upto:new Uint32Array(n+1)})
   }
   function kind(o){return (o.fil ? 0 : 2)+o.lay}
-  function nverts(o){return o.fil ? Math.max(0,o.pts.length-2)*3 : (o.pts.length-1)*2}
+  function nverts(o){
+    if (o.flat){return 0}
+    return o.fil ? Math.max(0,o.pts.length-2)*3 : (o.pts.length-1)*2
+  }
   for (var i = 0; i < n; i++){
     groups[kind(strokes[i])].count += nverts(strokes[i])
   }
@@ -181,8 +268,8 @@ function buildModel(strokes){
   var gr, c
   function put(q){
     var k = gr.at++
-    gr.pos[k*3] = q[0]-300
-    gr.pos[k*3+1] = 300-q[1]
+    gr.pos[k*3] = q[0]-S/2
+    gr.pos[k*3+1] = S/2-q[1]
     gr.pos[k*3+2] = q[2]
     gr.col[k*4] = c[0]; gr.col[k*4+1] = c[1]; gr.col[k*4+2] = c[2]; gr.col[k*4+3] = c[3]
   }
@@ -193,7 +280,9 @@ function buildModel(strokes){
     var m = p.length
     gr = groups[kind(o)]
     c = parseRGBA(o.col)
-    if (o.fil){
+    if (o.flat){
+      // drawn only in the finished painting
+    }else if (o.fil){
       if (m <= 4){
         // small polygon: fan
         for (var j = 1; j < m-1; j++){put(p[0]); put(p[j]); put(p[j+1])}
@@ -218,7 +307,8 @@ function buildModel(strokes){
   }
   return {
     groups:groups,
-    cx:isFinite(xmin) ? (xmin+xmax)/2-300 : 0,
+    size:S,
+    cx:isFinite(xmin) ? (xmin+xmax)/2-S/2 : 0,
     cz:zn ? zsum/zn : 0,
   }
 }
@@ -231,6 +321,8 @@ var View = new function(){
   var mats = []
   var cz = 0
   var DIST = 1400
+  var dims = [1,1,1]
+  var sheet = 600
   this.init = function(canvas){
     renderer = new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true})
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1,2))
@@ -249,11 +341,12 @@ var View = new function(){
         : new THREE.LineBasicMaterial({vertexColors:true,transparent:true,depthWrite:false}))
     }
   }
-  // fit the camera so 600 units of the plant span the card's width
+  // fit the camera so the sheet's width in plant units spans the card
   this.resize = function(w,h,card){
+    dims = [w,h,card]
     renderer.setSize(w,h,false)
     camera.aspect = w/h
-    camera.fov = 2*Math.atan(h*600/card/2/DIST)*rad2deg
+    camera.fov = 2*Math.atan(h*sheet/card/2/DIST)*rad2deg
     camera.updateProjectionMatrix()
   }
   this.load = function(model){
@@ -271,6 +364,8 @@ var View = new function(){
       inner.add(mesh)
       meshes.push({mesh:mesh,upto:gr.upto})
     }
+    sheet = model.size
+    this.resize(dims[0],dims[1],dims[2])
     outer.position.set(model.cx,0,0)
     inner.position.set(-model.cx,0,0)
     cz = model.cz
@@ -326,7 +421,7 @@ function makeCard(painting){
   COUNT += 1
   var el = document.createElement("div")
   el.className = "card"
-  var view = Layer.empty()
+  var view = Layer.empty(painting.size)
   el.appendChild(view.canvas)
   var cap = document.createElement("div")
   cap.className = "caption"
@@ -364,7 +459,7 @@ function ease(x){return x*x*(3-2*x)}
 // grow the plant in 3D, turn it, press it into the paper, then call done
 function perform(c,done){
   var n = c.painting.strokes.length
-  View.load(buildModel(c.painting.strokes))
+  View.load(buildModel(c.painting.strokes,c.painting.size))
 
   var T1 = SHOW.grow*1000
   var T2 = T1+SHOW.spin*1000
