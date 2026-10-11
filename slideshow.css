@@ -1,13 +1,8 @@
-/* a small gallery: celadon-grey walls, pale oak floor, walnut easel */
 :root {
-  --wall: #dfe2d8;
-  --wall-far: #c9cdc1;
-  --floor: #b9a586;
-  --floor-far: #8f7c62;
-  --walnut: #5a4232;
   --ink: rgba(0, 0, 0, 0.55);
   --ink-strong: rgba(0, 0, 0, 0.8);
   --chip: #ffffff;
+  --paper: #fdfbeb;
 }
 
 html, body {
@@ -17,63 +12,43 @@ html, body {
 }
 
 body {
-  background-color: var(--wall-far);
+  background-color: var(--paper);
   color: var(--ink);
 }
 
 #stage {
+  --w: min(600px, 78vmin);
   position: absolute;
   inset: 0;
   overflow: hidden;
-  perspective: 1000px;
-  perspective-origin: 50% 28%;
-  background: linear-gradient(var(--wall-far), var(--wall) 70%);
 }
 
-#world {
-  --w: min(520px, 58vmin);
+/* the 3D flower is drawn over the whole stage, above the cards */
+#gl {
   position: absolute;
-  left: 50%;
-  top: 44%;
-  width: 0;
-  height: 0;
-  transform-style: preserve-3d;
-}
-
-#world > *, #easel > * {
-  position: absolute;
-  left: 0;
-  top: 0;
-}
-
-#easel {
-  transform-style: preserve-3d;
-}
-
-#floor {
-  background:
-    repeating-linear-gradient(to right, transparent 0 58px, rgba(0, 0, 0, 0.1) 58px 60px),
-    linear-gradient(to bottom, var(--floor-far), var(--floor) 60%);
-}
-
-#wall {
-  background: linear-gradient(to right, var(--wall-far) 0%, var(--wall) 75%);
-  box-shadow: inset 0 -18px 0 rgba(0, 0, 0, 0.08);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 500;
 }
 
 .card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: var(--w);
   height: var(--w);
   margin: calc(var(--w) / -2) 0 0 calc(var(--w) / -2);
-  transition: transform 1.6s cubic-bezier(0.65, 0, 0.35, 1), opacity 1.2s;
-  transition-property: transform, opacity;
+  opacity: 0;
+  transition: transform 1.4s cubic-bezier(0.65, 0, 0.35, 1), opacity 1.4s;
 }
 
 .card canvas {
   display: block;
   width: 100%;
   height: 100%;
-  filter: drop-shadow(2px 4px 5px rgba(0, 0, 0, 0.28));
+  filter: drop-shadow(1px 2px 3px rgba(0, 0, 0, 0.2));
 }
 
 .card .caption {
@@ -81,32 +56,6 @@ body {
   text-align: right;
   font-family: monospace;
   color: var(--ink);
-}
-
-/* easel: two front legs, a back leg and a ledge */
-.easel {
-  background: var(--walnut);
-  border-radius: 3px;
-}
-#easel-l, #easel-r {
-  width: 14px;
-  height: calc(var(--w) * 1.75);
-  margin: calc(var(--w) * -0.8) 0 0 -7px;
-}
-#easel-l { transform: translate3d(calc(var(--w) * -0.28), 0, -48px) rotateZ(7deg); }
-#easel-r { transform: translate3d(calc(var(--w) * 0.28), 0, -48px) rotateZ(-7deg); }
-#easel-b {
-  width: 12px;
-  height: calc(var(--w) * 1.55);
-  margin: calc(var(--w) * -0.65) 0 0 -6px;
-  transform: translate3d(0, 0, calc(var(--w) * -0.35)) rotateX(-18deg);
-  filter: brightness(0.8);
-}
-#easel-ledge {
-  width: calc(var(--w) * 0.95);
-  height: 14px;
-  margin: calc(var(--w) * 0.5 + 6px) 0 0 calc(var(--w) * -0.475);
-  transform: translate3d(0, 0, 32px) rotateX(-6deg);
 }
 
 #loader {
@@ -117,7 +66,6 @@ body {
   justify-content: center;
   font-family: monospace;
   color: var(--ink);
-  z-index: 10;
 }
 
 #controls {

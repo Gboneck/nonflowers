@@ -1,36 +1,39 @@
 // Nonflowers slideshow
-// Paints one nonflower after another on an easel in a 3D room. Each plant
-// turns in space while it is painted and settles flat as it is finished,
-// then the sheet is lifted off and hung on the gallery wall.
-// Reuses the generator in main.js; load this script after it.
+// Grows each nonflower as a 3D model that turns in space, then presses it
+// flat into a sheet of paper where it becomes the painting. Finished
+// paintings are pushed aside onto a pile before the next flower grows.
+// Reuses the generator in main.js and renders with three.js.
 
-// settings, overridable with url arguments e.g. slideshow.html?paint=20&hold=5
+// settings, overridable with url arguments e.g. slideshow.html?grow=14&spin=6
 var SHOW = {
-  paint: 14,   // seconds spent painting one plant
-  hold: 3,     // seconds a finished painting rests on the easel
-  pile: 5,     // finished paintings kept on the wall
-  turn: 1,     // how far plants turn while painted (0 = flat)
+  grow: 10,    // seconds spent growing the plant
+  spin: 5,     // seconds the finished plant turns before it is pressed
+  press: 3,    // seconds spent pressing it flat
+  hold: 3,     // seconds a finished painting rests before being pushed aside
+  pile: 4,     // finished paintings kept on the pile
 }
 parseArgs({
-  paint:function(x){SHOW.paint = Math.max(1,parseFloat(x)) || SHOW.paint},
+  grow:function(x){SHOW.grow = Math.max(0.5,parseFloat(x)) || SHOW.grow},
+  spin:function(x){SHOW.spin = Math.max(0,parseFloat(x))},
+  press:function(x){SHOW.press = Math.max(0.5,parseFloat(x)) || SHOW.press},
   hold:function(x){SHOW.hold = Math.max(0,parseFloat(x)) || SHOW.hold},
   pile:function(x){SHOW.pile = Math.max(0,parseInt(x)) || SHOW.pile},
-  turn:function(x){SHOW.turn = Math.max(0,parseFloat(x))},
 })
+var SPIN_SPEED = 2*PI/14  // radians per second
 if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches){
-  SHOW.turn = 0
+  SPIN_SPEED = 2*PI/60
 }
 
 // the slideshow has no parameter summary panel
 vizParams = function(){}
 
-var SLICES = 10  // depth slices used to turn the plant in 3D
-
-// record every polygon the generator draws, so it can be replayed later
+// record every polygon the generator draws, with its depth, so the plant
+// can be rebuilt in 3D
 var Recorder = new function(){
   var ops = null
   var blits = null
   var target = null
+  var anchors = null
   var _polygon = polygon
   var _blit = Layer.blit
 
@@ -39,22 +42,16 @@ var Recorder = new function(){
     if (ops != null && a.pts != undefined && a.pts.length > 1){
       var xof = a.xof || 0
       var yof = a.yof || 0
-      var fil = (a.fil != undefined) ? a.fil : true
-      var z = 0
-      for (var i = 0; i < a.pts.length; i++){
-        z += isFinite(a.pts[i][2]) ? a.pts[i][2] : 0
-      }
       ops.push({
         ctx:(a.ctx != undefined) ? a.ctx : CTX,
-        pts:a.pts.map((p)=>([p[0]+xof,p[1]+yof])),
-        z:z/a.pts.length,
+        pts:a.pts.map((p)=>([p[0]+xof,p[1]+yof,p[2]])),
         col:(a.col != undefined) ? a.col : "black",
-        fil:fil,
-        str:(a.str != undefined) ? a.str : !fil,
+        fil:(a.fil != undefined) ? a.fil : true,
       })
     }
     return _polygon(args)
   }
+
   // layers get composited onto the target at an offset; remember it
   Layer.blit = function(ctx0,ctx1,args){
     if (ops != null && ctx0 == target){
@@ -63,9 +60,52 @@ var Recorder = new function(){
     }
     return _blit.apply(this,arguments)
   }
+
+  // Stems and leaves are built in 3D around the point they grow from, but
+  // the generator only passes on that point's x and y. Remember the depth
+  // of every point a stem or leaf passes through, so whatever grows from
+  // it later can be placed at the right depth. Outlines drawn in 2D get
+  // the depth of the nearest point on their spine.
+  function key(x,y){return x+","+y}
+  function track(f){
+    return function(args){
+      if (ops == null){return f(args)}
+      var a = (args != undefined) ? args : {};
+      var xof = a.xof || 0
+      var yof = a.yof || 0
+      var base = anchors.get(key(xof,yof)) || 0
+      var i0 = ops.length
+      var P = f(args)
+      var spine = P.map((p)=>([p[0]+xof,p[1]+yof,(isFinite(p[2]) ? p[2] : 0)+base]))
+      for (var i = 0; i < spine.length; i++){
+        anchors.set(key(spine[i][0],spine[i][1]),spine[i][2])
+      }
+      for (var i = i0; i < ops.length; i++){
+        var pts = ops[i].pts
+        for (var j = 0; j < pts.length; j++){
+          var p = pts[j]
+          if (isFinite(p[2])){
+            p[2] += base
+          }else{
+            var best = Infinity
+            p[2] = base
+            for (var k = 0; k < spine.length; k++){
+              var d = Math.abs(spine[k][0]-p[0])+Math.abs(spine[k][1]-p[1])
+              if (d < best){best = d; p[2] = spine[k][2]}
+            }
+          }
+        }
+      }
+      return P
+    }
+  }
+  stem = track(stem)
+  leaf = track(leaf)
+
   this.start = function(ctx){
     ops = []
     blits = new Map()
+    anchors = new Map()
     target = ctx
   }
   // returns strokes in drawing order, in target coordinates,
@@ -81,12 +121,12 @@ var Recorder = new function(){
       delete o.ctx
       res.push(o)
     }
-    ops = null; blits = null; target = null
+    ops = null; blits = null; target = null; anchors = null
     return res
   }
 }
 
-// generate a painting: blank sheet, finished artwork, and its strokes
+// generate a painting: blank sheet, finished artwork, and its 3D strokes
 function makePainting(){
   var sheet = Layer.empty()
   sheet.fillStyle = "white"
@@ -111,27 +151,154 @@ function makePainting(){
 
   Layer.border(sheet,squircle(0.98,3))
   Layer.border(art,squircle(0.98,3))
+  return {sheet:sheet,art:art,strokes:strokes}
+}
 
-  // sort strokes into depth slices
-  var zmin = Infinity, zmax = -Infinity, xmin = Infinity, xmax = -Infinity
-  strokes.forEach(function(o){
-    zmin = Math.min(zmin,o.z); zmax = Math.max(zmax,o.z)
-    xmin = Math.min(xmin,o.pts[0][0]); xmax = Math.max(xmax,o.pts[0][0])
-  })
-  var zs = Math.max(zmax-zmin,1e-6)
-  strokes.forEach(function(o){
-    o.slice = Math.min(SLICES-1,Math.floor((o.z-zmin)/zs*SLICES))
-  })
-  var depth = []
-  for (var i = 0; i < SLICES; i++){depth.push(zmin+(i+0.5)/SLICES*zs)}
+// parse the css colors the generator produces
+function parseRGBA(s){
+  var m = /rgba?\(([^,]+),([^,]+),([^,)]+),?([^)]*)\)/.exec(s)
+  if (m == null){return [0,0,0,1]}
+  return [m[1]/255,m[2]/255,m[3]/255,(m[4] === "") ? 1 : parseFloat(m[4])]
+}
 
-  return {sheet:sheet,art:art,strokes:strokes,depth:depth,
-    cx:isFinite(xmin) ? (xmin+xmax)/2 : 300}
+// turn recorded strokes into vertex buffers, one per layer and kind,
+// with the vertex count reached after each stroke so growth can be replayed
+function buildModel(strokes){
+  var n = strokes.length
+  var groups = []
+  for (var g = 0; g < 4; g++){ // fills of layer 0, 1, lines of layer 0, 1
+    groups.push({count:0,at:0,upto:new Uint32Array(n+1)})
+  }
+  function kind(o){return (o.fil ? 0 : 2)+o.lay}
+  function nverts(o){return o.fil ? Math.max(0,o.pts.length-2)*3 : (o.pts.length-1)*2}
+  for (var i = 0; i < n; i++){
+    groups[kind(strokes[i])].count += nverts(strokes[i])
+  }
+  groups.forEach(function(gr){
+    gr.pos = new Float32Array(gr.count*3)
+    gr.col = new Float32Array(gr.count*4)
+  })
+  var gr, c
+  function put(q){
+    var k = gr.at++
+    gr.pos[k*3] = q[0]-300
+    gr.pos[k*3+1] = 300-q[1]
+    gr.pos[k*3+2] = q[2]
+    gr.col[k*4] = c[0]; gr.col[k*4+1] = c[1]; gr.col[k*4+2] = c[2]; gr.col[k*4+3] = c[3]
+  }
+  var xmin = Infinity, xmax = -Infinity, zsum = 0, zn = 0
+  for (var i = 0; i < n; i++){
+    var o = strokes[i]
+    var p = o.pts
+    var m = p.length
+    gr = groups[kind(o)]
+    c = parseRGBA(o.col)
+    if (o.fil){
+      if (m <= 4){
+        // small polygon: fan
+        for (var j = 1; j < m-1; j++){put(p[0]); put(p[j]); put(p[j+1])}
+      }else{
+        // stroke outline, one side then the other reversed: a strip
+        var h = Math.floor(m/2)
+        for (var j = 0; j < h-1; j++){
+          var a0 = p[j], a1 = p[j+1], b0 = p[m-1-j], b1 = p[m-2-j]
+          put(a0); put(a1); put(b0)
+          put(a1); put(b1); put(b0)
+        }
+        if (m % 2 == 1){put(p[h-1]); put(p[h]); put(p[h+1])}
+      }
+      for (var j = 0; j < m; j++){
+        xmin = Math.min(xmin,p[j][0]); xmax = Math.max(xmax,p[j][0])
+        zsum += p[j][2]; zn++
+      }
+    }else{
+      for (var j = 0; j < m-1; j++){put(p[j]); put(p[j+1])}
+    }
+    for (var g = 0; g < 4; g++){groups[g].upto[i+1] = groups[g].at}
+  }
+  return {
+    groups:groups,
+    cx:isFinite(xmin) ? (xmin+xmax)/2-300 : 0,
+    cz:zn ? zsum/zn : 0,
+  }
+}
+
+// the 3D view: a camera looking at the sheet, placed so that the plane
+// z = 0 lines up exactly with the card on screen
+var View = new function(){
+  var renderer, scene, camera, outer, inner
+  var meshes = []
+  var mats = []
+  var cz = 0
+  var DIST = 1400
+  this.init = function(canvas){
+    renderer = new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true})
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1,2))
+    renderer.setClearColor(0x000000,0)
+    scene = new THREE.Scene()
+    camera = new THREE.PerspectiveCamera(30,1,10,10000)
+    camera.position.set(0,0,DIST)
+    camera.lookAt(0,0,0)
+    outer = new THREE.Group()
+    inner = new THREE.Group()
+    outer.add(inner)
+    scene.add(outer)
+    for (var g = 0; g < 4; g++){
+      mats.push((g < 2)
+        ? new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,side:THREE.DoubleSide})
+        : new THREE.LineBasicMaterial({vertexColors:true,transparent:true,depthWrite:false}))
+    }
+  }
+  // fit the camera so 600 units of the plant span the card's width
+  this.resize = function(w,h,card){
+    renderer.setSize(w,h,false)
+    camera.aspect = w/h
+    camera.fov = 2*Math.atan(h*600/card/2/DIST)*rad2deg
+    camera.updateProjectionMatrix()
+  }
+  this.load = function(model){
+    this.clear()
+    var order = [0,2,1,3] // stems & leaves, their veins, flowers, their veins
+    for (var g = 0; g < 4; g++){
+      var gr = model.groups[g]
+      var geo = new THREE.BufferGeometry()
+      geo.setAttribute("position",new THREE.BufferAttribute(gr.pos,3))
+      geo.setAttribute("color",new THREE.BufferAttribute(gr.col,4))
+      geo.setDrawRange(0,0)
+      var mesh = (g < 2) ? new THREE.Mesh(geo,mats[g]) : new THREE.LineSegments(geo,mats[g])
+      mesh.renderOrder = order[g]
+      mesh.frustumCulled = false
+      inner.add(mesh)
+      meshes.push({mesh:mesh,upto:gr.upto})
+    }
+    outer.position.set(model.cx,0,0)
+    inner.position.set(-model.cx,0,0)
+    cz = model.cz
+  }
+  this.clear = function(){
+    meshes.forEach(function(m){inner.remove(m.mesh); m.mesh.geometry.dispose()})
+    meshes = []
+    renderer.clear()
+  }
+  // show the first k strokes, turned by angle and tilt, with depth scaled by zs
+  this.draw = function(k,angle,tilt,zs){
+    meshes.forEach(function(m){m.mesh.geometry.setDrawRange(0,m.upto[k])})
+    outer.rotation.set(tilt,angle,0)
+    inner.scale.set(1,1,Math.max(zs,1e-4))
+    inner.position.z = -cz*zs
+    // once nearly flat, paint in drawing order like the 2D original
+    var flat = zs < 0.12
+    for (var g = 0; g < 4; g++){
+      mats[g].depthTest = !flat
+      mats[g].depthWrite = !flat && g < 2
+    }
+    renderer.render(scene,camera)
+  }
 }
 
 var STAGE
-var WORLD
-var CARDS = []   // CARDS[0] is on the easel, the rest hang on the wall
+var GL
+var CARDS = []   // CARDS[0] is the current painting, the rest are on the pile
 var COUNT = 0
 var PAUSED = false
 var RESUME = []  // callbacks waiting for unpause
@@ -149,243 +316,150 @@ function togglePause(){
   }
 }
 
-// a card is a sheet of paper in the room
+// card size, matching --w in slideshow.css
+function cardWidth(){
+  return Math.min(600,0.78*Math.min(window.innerWidth,window.innerHeight))
+}
+
+// a card is a sheet of paper on the stage
 function makeCard(painting){
   COUNT += 1
   var el = document.createElement("div")
   el.className = "card"
   var view = Layer.empty()
-  view.drawImage(painting.sheet.canvas,0,0)
   el.appendChild(view.canvas)
   var cap = document.createElement("div")
   cap.className = "caption"
   cap.innerHTML = "No. "+COUNT
   el.appendChild(cap)
-  var layers = []
-  for (var l = 0; l < 2; l++){
-    var s = []
-    for (var i = 0; i < SLICES; i++){s.push(Layer.empty())}
-    layers.push(s)
-  }
-  return {
-    el:el,
-    view:view,
-    tmp:Layer.empty(),
-    layers:layers,
-    painting:painting,
-    tilt:normRand(-1.5,1.5),
-  }
+  return {el:el,view:view,painting:painting,show:0,tilt:normRand(-6,6)}
 }
 
-// css transform for a pose; every pose uses the same function list
-// so the browser interpolates between them smoothly
-function pose(x,y,z,ry,rx,rz,s){
-  return "translate3d("+x+"px,"+y+"px,"+z+"px) rotateY("+ry+"deg) rotateX("
-    +rx+"deg) rotateZ("+rz+"deg) scale("+s+")"
-}
-
-// room geometry, in multiples of the card width
-var ROOM = {
-  turn: -26,      // the camera looks into the room at an angle (deg)
-  easelX: 0.3,    // easel position
-  wallZ: -0.75,   // back wall depth
-  floorY: 0.98,   // floor height
-  hangScale: 0.6, // size of hung paintings
-  hangGap: 0.72,  // spacing of hung paintings
-}
-
-// position of the k-th painting on the wall (k = 1 is nearest the easel)
-function wallSlot(k,w){
-  return {
-    x:w*(ROOM.easelX-1.5-(k-1)*ROOM.hangGap),
-    y:-w*0.12,
-    z:w*ROOM.wallZ+2,
-  }
-}
-
-// place the room and every card in it
+// place every card: the newest in the middle, older ones piled to the left
 function layout(){
-  // matches --w in slideshow.css
-  var w = Math.min(520,0.58*Math.min(window.innerWidth,window.innerHeight))
-  // keep the easel a little right of the middle of the screen
-  var ex = w*ROOM.easelX
-  WORLD.style.transform = "translate3d("+(-w*0.5)+"px,0px,0px) rotateY("+ROOM.turn+"deg)"
-
-  var len = w*12
-  var hgt = w*2.6
-  var wall = document.getElementById("wall")
-  wall.style.width = len+"px"
-  wall.style.height = hgt+"px"
-  wall.style.margin = (-hgt/2)+"px 0 0 "+(-len/2)+"px"
-  wall.style.transform = pose(-len*0.3,w*ROOM.floorY-hgt/2,w*ROOM.wallZ,0,0,0,1)
-
-  var floor = document.getElementById("floor")
-  var fs = w*12
-  floor.style.width = fs+"px"
-  floor.style.height = fs+"px"
-  floor.style.margin = (-fs/2)+"px 0 0 "+(-fs/2)+"px"
-  floor.style.transform = "translate3d("+(-fs*0.3)+"px,"+(w*ROOM.floorY)+"px,"
-    +(w*ROOM.wallZ+fs/2)+"px) rotateX(90deg)"
-
-  document.getElementById("easel").style.transform =
-    "translate3d("+ex+"px,0px,0px)"
-
+  var sw = STAGE.clientWidth
+  View.resize(STAGE.clientWidth,STAGE.clientHeight,cardWidth())
   for (var i = 0; i < CARDS.length; i++){
     var c = CARDS[i]
-    if (c.state == "lifted"){continue}
     if (i == 0){
-      c.el.style.transform = (c.state == "entering")
-        ? pose(ex,-w*0.9,-w*0.2,0,5,0,1)
-        : pose(ex,0,0,0,5,0,1)
-      c.el.style.opacity = (c.state == "entering") ? 0 : 1
+      c.el.style.transform = ""
+      c.el.style.opacity = c.show
       continue
     }
-    var p = wallSlot(i,w)
-    c.el.style.transform = pose(p.x,p.y,p.z,0,0,c.tilt,ROOM.hangScale)
-    c.el.style.opacity = (i > SHOW.pile) ? 0 : 1
+    var w = c.el.offsetWidth
+    var k = i-1
+    var s = 0.55-k*0.04
+    var cx = 24+w*s/2-k*w*0.12
+    var dx = cx-sw/2
+    var dy = k*14+w*0.08
+    c.el.style.transform =
+      "translate("+dx+"px,"+dy+"px) rotate("+(c.tilt-k*2)+"deg) scale("+s+")"
+    c.el.style.opacity = (i > SHOW.pile) ? 0 : Math.max(0,1-k*0.22)
+    c.el.style.zIndex = 100-i
   }
 }
 
-// draw one recorded polygon
-function drawOp(ctx,o){
-  var pts = o.pts
-  ctx.beginPath()
-  ctx.moveTo(pts[0][0],pts[0][1])
-  for (var j = 1; j < pts.length; j++){
-    ctx.lineTo(pts[j][0],pts[j][1])
-  }
-  if (o.fil){ctx.fillStyle = o.col; ctx.fill()}
-  if (o.str){ctx.strokeStyle = o.col; ctx.stroke()}
-}
+function ease(x){return x*x*(3-2*x)}
 
-// draw the plant painted so far, turned by angle (radians) about its stem
-function render(c,angle,finish){
-  var p = c.painting
-  var v = c.view
-  var t = c.tmp
-  var W = v.canvas.width
-  var ca = Math.cos(angle), sa = Math.sin(angle)
+// grow the plant in 3D, turn it, press it into the paper, then call done
+function perform(c,done){
+  var n = c.painting.strokes.length
+  View.load(buildModel(c.painting.strokes))
 
-  v.setTransform(1,0,0,1,0,0)
-  v.globalCompositeOperation = "source-over"
-  v.globalAlpha = 1
-  v.clearRect(0,0,W,W)
-  v.drawImage(p.sheet.canvas,0,0)
-
-  for (var l = 0; l < 2; l++){
-    t.setTransform(1,0,0,1,0,0)
-    t.clearRect(0,0,W,W)
-    // back to front
-    for (var i = 0; i < SLICES; i++){
-      var z = p.depth[i]
-      t.setTransform(ca,0,0,1,p.cx-ca*p.cx+z*sa,0)
-      t.drawImage(c.layers[l][i].canvas,0,0)
-    }
-    t.setTransform(1,0,0,1,0,0)
-    // the generator composites both layers with multiply
-    v.globalCompositeOperation = "multiply"
-    v.globalAlpha = (l == 0) ? 0.85 : 1
-    v.drawImage(t.canvas,0,0)
-  }
-  // keep the paint on the sheet
-  v.globalAlpha = 1
-  v.globalCompositeOperation = "destination-in"
-  v.drawImage(p.sheet.canvas,0,0)
-  v.globalCompositeOperation = "source-over"
-
-  if (finish > 0){
-    v.globalAlpha = finish
-    v.drawImage(p.art.canvas,0,0)
-    v.globalAlpha = 1
-  }
-}
-
-// animate the painting of a card, then call done
-function paint(c,done){
-  var ops = c.painting.strokes
-  var n = ops.length
-  var dur = SHOW.paint*1000
-  var fade = 900
-  var amp = SHOW.turn*normRand(0.45,0.85)*randChoice([-1,1])
+  var T1 = SHOW.grow*1000
+  var T2 = T1+SHOW.spin*1000
+  var T3 = T2+SHOW.press*1000
+  var T4 = T3+900
+  var a0 = normRand(-1,1)*PI
+  var dir = randChoice([-1,1])
+  var tilt0 = normRand(0.15,0.35)
+  var a2 = null, aEnd = null
   var elapsed = 0
-  var drawn = 0
   var last = null
+  var v = c.view
+  var sheet = c.painting.sheet.canvas
+  var art = c.painting.art.canvas
+
   function frame(t){
     if (last == null){last = t}
     if (!PAUSED){elapsed += Math.min(t-last,100)}
     last = t
+    var e = elapsed
 
-    var x = Math.min(1,elapsed/dur)
-    var target = Math.floor(n*x*x*(3-2*x))
-    for (; drawn < target; drawn++){
-      var o = ops[drawn]
-      drawOp(c.layers[o.lay][o.slice],o)
+    var k = (e < T1) ? Math.floor(n*ease(e/T1)) : n
+    var angle, tilt, zs
+    if (e < T2){
+      angle = a0+dir*SPIN_SPEED*e/1000
+      tilt = tilt0
+      zs = 1
+    }else{
+      // slow down to face the viewer while closing like a flower press
+      if (a2 == null){
+        a2 = a0+dir*SPIN_SPEED*T2/1000
+        var coast = a2+dir*SPIN_SPEED*SHOW.press/3
+        aEnd = (dir > 0) ? Math.ceil(coast/(2*PI))*2*PI : Math.floor(coast/(2*PI))*2*PI
+      }
+      var p = Math.min(1,(e-T2)/(T3-T2))
+      angle = a2+(aEnd-a2)*(1-Math.pow(1-p,3))
+      tilt = tilt0*(1-ease(p))
+      zs = 1-ease(p)
+      c.show = Math.min(1,p*2)
+      c.el.style.opacity = c.show
     }
-    // turn back to face the viewer as the painting nears completion
-    var settle = Math.min(1,x/0.92)
-    var angle = amp*Math.pow(1-settle,2)*Math.cos(settle*PI*0.5)
-    var finish = Math.min(1,Math.max(0,(elapsed-dur)/fade))
-    render(c,angle,finish)
+    View.draw(k,angle,tilt,zs)
 
-    if (finish < 1){
+    // swap the pressed plant for the painted one
+    if (e >= T3){
+      var f = Math.min(1,(e-T3)/(T4-T3))
+      GL.style.opacity = 1-f
+      v.globalAlpha = 1
+      v.drawImage(sheet,0,0)
+      v.globalAlpha = f
+      v.drawImage(art,0,0)
+      v.globalAlpha = 1
+    }
+    if (e < T4){
       requestAnimationFrame(frame)
     }else{
+      View.clear()
+      GL.style.opacity = 1
       // only the finished image is needed from now on
-      c.tmp = c.layers = c.painting = null
+      c.painting = null
       done()
     }
   }
+  v.drawImage(sheet,0,0)
   requestAnimationFrame(frame)
 }
 
-// lift the finished painting off the easel, ready to be hung
-function lift(c){
-  var w = c.el.offsetWidth
-  c.state = "lifted"
-  c.el.style.transitionDuration = "0.9s"
-  c.el.style.transform = pose(w*(ROOM.easelX-0.25),-w*0.2,w*0.3,14,0,-3,0.9)
-}
-
-// generate the next plant, hang the last one, and paint
+// generate the next plant, push the last one aside, and grow it
 function next(){
   var c = makeCard(makePainting())
-  document.getElementById("loader").style.display = "none"
-
-  var prev = CARDS[0]
-  if (prev != undefined){lift(prev)}
-
-  c.state = "entering"
   CARDS.unshift(c)
-  WORLD.appendChild(c.el)
+  STAGE.appendChild(c.el)
+  c.el.style.zIndex = 100
+  document.getElementById("loader").style.display = "none"
   layout()
-  c.el.offsetWidth // commit the entering pose before transitioning
 
+  // drop paintings that slid off the pile
+  while (CARDS.length > SHOW.pile+2){
+    STAGE.removeChild(CARDS.pop().el)
+  }
   setTimeout(function(){
-    if (prev != undefined){
-      prev.state = "hung"
-      prev.el.style.transitionDuration = ""
-    }
-    c.state = "easel"
-    layout()
-    // drop paintings that went past the end of the wall
-    while (CARDS.length > SHOW.pile+2){
-      WORLD.removeChild(CARDS.pop().el)
-    }
-  },prev != undefined ? 950 : 50)
-
-  setTimeout(function(){
-    paint(c,function(){
+    perform(c,function(){
       setTimeout(function(){
         // generating blocks the page, so let the last frame show first
         whenRunning(function(){setTimeout(next,30)})
       },SHOW.hold*1000)
     })
-  },prev != undefined ? 2400 : 1400)
+  },CARDS.length > 1 ? 1400 : 100)
 }
 
 function startShow(){
+  makeBG()
   STAGE = document.getElementById("stage")
-  WORLD = document.getElementById("world")
+  GL = document.getElementById("gl")
+  View.init(GL)
   layout()
   window.addEventListener("resize",layout)
   document.addEventListener("keydown",function(e){

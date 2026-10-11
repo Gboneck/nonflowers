@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="main.js"></script>
     <script src="slideshow.js"></script>
     <link rel="stylesheet" type="text/css" href="slideshow.css">
@@ -10,20 +11,10 @@
   </head>
   <body onload="startShow()">
 
-    <div id="stage">
-      <div id="world">
-        <div id="floor"></div>
-        <div id="wall"></div>
-        <div id="easel">
-          <div class="easel" id="easel-b"></div>
-          <div class="easel" id="easel-l"></div>
-          <div class="easel" id="easel-r"></div>
-          <div class="easel" id="easel-ledge"></div>
-        </div>
-      </div>
-    </div>
-
     <div id="loader">Preparing paper...</div>
+
+    <div id="stage"></div>
+    <canvas id="gl"></canvas>
 
     <div id="controls">
       <button id="btn-pause" title="pause (space)" onclick="togglePause()">pause</button>
