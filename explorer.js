@@ -15,6 +15,7 @@ var plants = []       // every specimen, in strip order
 var bySeed = new Map()
 var current = null    // the selected specimen
 var mode = "model"    // or "painting"
+var starredOnly = false
 
 function $(id){return document.getElementById(id)}
 function ease(x){return x*x*(3-2*x)}
@@ -120,6 +121,46 @@ function evict(){
 
 // ------------------------------------------------------------- specimens
 
+// the collection (seeds in order, and which are starred) is kept in this
+// browser, so it is still there next time
+var STORE_KEY = "nonflowers-herbarium-v1"
+var restoring = false
+
+function saveCollection(){
+  if (restoring){return}
+  try{
+    localStorage.setItem(STORE_KEY,JSON.stringify({
+      seeds:plants.map((p)=>(p.seed)),
+      stars:plants.filter((p)=>(p.star)).map((p)=>(p.seed)),
+    }))
+  }catch(e){}
+}
+
+function loadCollection(){
+  try{
+    var d = JSON.parse(localStorage.getItem(STORE_KEY))
+    if (d && Array.isArray(d.seeds) && d.seeds.length){return d}
+  }catch(e){}
+  return null
+}
+
+function setStar(p,on){
+  p.star = on
+  p.el.querySelector(".badge").hidden = !on
+  p.el.dataset.search = searchText(p)
+  if (p == current){showStar()}
+  saveCollection()
+}
+
+function showStar(){
+  var b = $("star")
+  b.hidden = !current
+  if (!current){return}
+  b.setAttribute("aria-pressed",String(!!current.star))
+  b.innerHTML = current.star ? "&#9733;" : "&#9734;"
+  b.title = current.star ? "Unstar this specimen (S)" : "Star this specimen (S)"
+}
+
 function newSeed(){
   var s
   do {s = 100000+Math.floor(Math.random()*900000)} while (bySeed.has(s))
@@ -128,13 +169,14 @@ function newSeed(){
 
 function addPlant(seed){
   if (bySeed.has(seed)){return bySeed.get(seed)}
-  var p = {seed:seed,no:plants.length+1,meta:null,entry:null,status:"new"}
+  var p = {seed:seed,no:plants.length+1,meta:null,entry:null,status:"new",star:false}
   var el = document.createElement("button")
   el.type = "button"
   el.className = "card pending"
   el.setAttribute("role","option")
   el.setAttribute("aria-selected","false")
-  el.innerHTML = '<div class="sheet"><canvas width="256" height="256"></canvas></div>'
+  el.innerHTML = '<div class="sheet"><canvas width="256" height="256"></canvas>'
+    +'<span class="badge" aria-label="starred" hidden>&#9733;</span></div>'
     +'<div class="name">Growing&hellip;</div>'
     +'<div class="no">No. '+String(p.no).padStart(3,"0")+' &middot; '+seed+'</div>'
   el.dataset.search = searchText(p)
@@ -144,6 +186,7 @@ function addPlant(seed){
   plants.push(p)
   bySeed.set(seed,p)
   Pool.request(p)
+  saveCollection()
   return p
 }
 
@@ -153,6 +196,7 @@ function addBatch(n){
 
 function searchText(p){
   var t = ["no. "+p.no,String(p.seed)]
+  if (p.star){t.push("starred")}
   if (p.meta){
     var m = p.meta
     t.push(m.name,m.habit,m.colour,m.leaves,m.petals+" petals")
@@ -169,6 +213,9 @@ function select(p,scroll){
   if (current){current.el.setAttribute("aria-selected","false")}
   current = p
   p.el.setAttribute("aria-selected","true")
+  showStar()
+  // the address names the specimen, so a link to it opens this plant
+  try{history.replaceState(null,"","#seed-"+p.seed)}catch(e){}
   if (scroll){
     scrollTarget = p
     p.el.scrollIntoView({behavior:REDUCED ? "auto" : "smooth",inline:"center",block:"nearest"})
@@ -182,7 +229,8 @@ function select(p,scroll){
     Pool.pump()
   }
   // keep the strip growing ahead of the reader
-  if (!$("search").value && plants.indexOf(p) >= plants.length-3 && plants.length < MAX_PLANTS){
+  if (!$("search").value && !starredOnly && plants.indexOf(p) >= plants.length-3
+    && plants.length < MAX_PLANTS){
     addBatch(BATCH/2)
   }
 }
@@ -214,7 +262,7 @@ function showLabel(){
 // ------------------------------------------------------------- 3D view
 
 var View = new function(){
-  var renderer, scene, camera, outer, inner
+  var renderer, scene, camera, outer, inner, shadow
   var meshes = []
   var mats = []
   var FOV = 32
@@ -232,16 +280,45 @@ var View = new function(){
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1,2))
     renderer.setClearColor(0x000000,0)
     scene = new THREE.Scene()
+    // parts further away fade a little into the paper
+    scene.fog = new THREE.Fog(0xf1f1e7,1000,3000)
     camera = new THREE.PerspectiveCamera(FOV,1,1,20000)
+    scene.add(camera)
     outer = new THREE.Group()
     inner = new THREE.Group()
     outer.add(inner)
     scene.add(outer)
+
+    // soft daylight from above, and a lamp over the viewer's left shoulder
+    // that stays put while the plant turns, so its surfaces catch the light.
+    // The generator's colours are already shaded, so the light is gentle.
+    scene.add(new THREE.HemisphereLight(0xffffff,0xd9d4bf,0.66))
+    var lamp = new THREE.DirectionalLight(0xfff4e2,0.42)
+    lamp.position.set(-0.6,0.8,1)
+    camera.add(lamp)
+
     for (var g = 0; g < 4; g++){
       mats.push((g < 2)
-        ? new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,side:THREE.DoubleSide})
+        ? new THREE.MeshLambertMaterial({vertexColors:true,transparent:true,side:THREE.DoubleSide})
         : new THREE.LineBasicMaterial({vertexColors:true,transparent:true,depthWrite:false}))
     }
+
+    // a soft shadow on the ground under the plant
+    var sc = document.createElement("canvas")
+    sc.width = sc.height = 128
+    var sx = sc.getContext("2d")
+    var grad = sx.createRadialGradient(64,64,0,64,64,64)
+    grad.addColorStop(0,"rgba(60,66,48,0.32)")
+    grad.addColorStop(0.5,"rgba(60,66,48,0.12)")
+    grad.addColorStop(1,"rgba(60,66,48,0)")
+    sx.fillStyle = grad
+    sx.fillRect(0,0,128,128)
+    shadow = new THREE.Mesh(new THREE.PlaneGeometry(1,1),
+      new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(sc),transparent:true,depthWrite:false}))
+    shadow.rotation.x = -Math.PI/2
+    shadow.renderOrder = -1
+    shadow.visible = false
+    inner.add(shadow)
 
     // turn by dragging, zoom with the wheel or a pinch
     canvas.addEventListener("pointerdown",function(e){
@@ -292,6 +369,7 @@ var View = new function(){
     meshes = []
     plant = null
     n = 0
+    shadow.visible = false
   }
 
   this.show = function(p){
@@ -304,6 +382,7 @@ var View = new function(){
       var geo = new THREE.BufferGeometry()
       geo.setAttribute("position",new THREE.BufferAttribute(gr.pos,3))
       geo.setAttribute("color",new THREE.BufferAttribute(gr.col,4))
+      if (gr.nrm){geo.setAttribute("normal",new THREE.BufferAttribute(gr.nrm,3))}
       geo.setDrawRange(0,0)
       var mesh = (g < 2) ? new THREE.Mesh(geo,mats[g]) : new THREE.LineSegments(geo,mats[g])
       mesh.renderOrder = order[g]
@@ -314,6 +393,11 @@ var View = new function(){
     n = model.n
     radius = model.radius
     inner.position.set(-model.center[0],-model.center[1],-model.center[2])
+    // lay the shadow where the plant meets the ground
+    var spread = Math.max(model.hi[0]-model.lo[0],model.hi[2]-model.lo[2])
+    shadow.position.set(model.center[0],model.lo[1]-2,model.center[2])
+    shadow.scale.set(spread*0.9+40,spread*0.9+40,1)
+    shadow.visible = true
     growStart = performance.now()
   }
 
@@ -355,6 +439,8 @@ var View = new function(){
     camera.position.set(0,radius*0.08,dist*zoom)
     camera.lookAt(0,radius*0.08,0)
     camera.updateProjectionMatrix()
+    scene.fog.near = dist*zoom-radius*0.3
+    scene.fog.far = dist*zoom+radius*4
     renderer.render(scene,camera)
   }
 }
@@ -418,9 +504,9 @@ function applyFilter(reselect){
   var words = q.split(/\s+/).filter(Boolean)
   plants.forEach(function(p){
     var text = p.el.dataset.search
-    p.el.hidden = !words.every((w)=>(text.indexOf(w) >= 0))
+    p.el.hidden = !words.every((w)=>(text.indexOf(w) >= 0)) || (starredOnly && !p.star)
   })
-  $("more").hidden = words.length > 0
+  $("more").hidden = words.length > 0 || starredOnly
   var seed = /^\d{1,9}$/.test(q) ? parseInt(q) : null
   var gs = $("grow-seed")
   if (seed != null && !bySeed.has(seed)){
@@ -431,8 +517,10 @@ function applyFilter(reselect){
   }
   var v = visible()
   if (reselect && v.length && (!current || current.el.hidden)){select(v[0],true)}
-  if (v.length == 0 && words.length){
-    $("status").textContent = "No specimens match “"+q+"”."
+  if (v.length == 0 && starredOnly && !words.length){
+    $("status").textContent = "Nothing starred yet. Star a specimen with ☆ next to its name."
+  }else if (v.length == 0 && (words.length || starredOnly)){
+    $("status").textContent = "No "+(starredOnly ? "starred " : "")+"specimens match “"+q+"”."
   }else if (current){
     showLabel()
   }
@@ -463,6 +551,12 @@ function start(){
     applyFilter(false)
     select(p,true)
   })
+  $("star").addEventListener("click",function(){if (current){setStar(current,!current.star)}})
+  $("starred-only").addEventListener("click",function(){
+    starredOnly = !starredOnly
+    this.setAttribute("aria-pressed",String(starredOnly))
+    applyFilter(true)
+  })
   $("mode-model").addEventListener("click",function(){setMode("model")})
   $("mode-painting").addEventListener("click",function(){setMode("painting")})
   window.addEventListener("resize",function(){if (mode == "painting"){drawPainting()}})
@@ -470,11 +564,45 @@ function start(){
     if (e.target == $("search")){return}
     if (e.key == "ArrowRight"){e.preventDefault(); step(1)}
     if (e.key == "ArrowLeft"){e.preventDefault(); step(-1)}
+    if ((e.key == "s" || e.key == "S") && current && !e.metaKey && !e.ctrlKey){
+      setStar(current,!current.star)
+    }
+  })
+  window.addEventListener("hashchange",function(){
+    var p = fromHash()
+    if (p && p != current){
+      // make sure the linked specimen's card is not filtered out
+      if (p.el.hidden){
+        $("search").value = ""
+        starredOnly = false
+        $("starred-only").setAttribute("aria-pressed","false")
+        applyFilter(false)
+      }
+      select(p,true)
+    }
   })
 
-  addBatch(BATCH)
+  // bring back the saved collection, or start a new one
+  var saved = loadCollection()
+  if (saved){
+    restoring = true
+    saved.seeds.slice(0,MAX_PLANTS).forEach(addPlant)
+    restoring = false
+    ;(saved.stars || []).forEach(function(s){
+      if (bySeed.has(s)){setStar(bySeed.get(s),true)}
+    })
+  }else{
+    addBatch(BATCH)
+  }
+  var first = fromHash() || plants[0]
   $("strip").scrollLeft = 0
-  select(plants[0],false)
+  select(first,first != plants[0])
+}
+
+// a link ending in #seed-123456 opens that specimen, growing it if needed
+function fromHash(){
+  var m = /^#seed-(\d{1,9})$/.exec(location.hash)
+  return m ? addPlant(parseInt(m[1])) : null
 }
 
 if (document.readyState == "loading"){

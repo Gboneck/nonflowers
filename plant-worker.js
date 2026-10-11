@@ -299,10 +299,25 @@ function buildModel(strokes,S){
     }
     for (var g = 0; g < 4; g++){groups[g].upto[i+1] = groups[g].at}
   }
+  // a normal for each triangle, so the model can be lit
+  for (var g = 0; g < 2; g++){
+    var P = groups[g].pos
+    var N = new Float32Array(P.length)
+    for (var k = 0; k+8 < P.length; k += 9){
+      var ax = P[k+3]-P[k], ay = P[k+4]-P[k+1], az = P[k+5]-P[k+2]
+      var bx = P[k+6]-P[k], by = P[k+7]-P[k+1], bz = P[k+8]-P[k+2]
+      var nx = ay*bz-az*by, ny = az*bx-ax*bz, nz = ax*by-ay*bx
+      var l = Math.sqrt(nx*nx+ny*ny+nz*nz) || 1
+      for (var v = 0; v < 9; v += 3){
+        N[k+v] = nx/l; N[k+v+1] = ny/l; N[k+v+2] = nz/l
+      }
+    }
+    groups[g].nrm = N
+  }
   if (!isFinite(lo[0])){lo = [0,0,0]; hi = [0,0,0]}
   var center = [0,1,2].map((d)=>((lo[d]+hi[d])/2))
   var radius = Math.max(50,Math.sqrt([0,1,2].reduce((s,d)=>(s+Math.pow((hi[d]-lo[d])/2,2)),0)))
-  return {groups:groups,n:n,center:center,radius:radius}
+  return {groups:groups,n:n,center:center,radius:radius,lo:lo,hi:hi}
 }
 
 // a small seeded random generator for naming, separate from the plant's
@@ -375,7 +390,10 @@ function grow(seed){
     thumb:thumb.transferToImageBitmap(),
   }
   var transfer = [msg.art,msg.thumb]
-  model.groups.forEach(function(g){transfer.push(g.pos.buffer,g.col.buffer,g.upto.buffer)})
+  model.groups.forEach(function(g){
+    transfer.push(g.pos.buffer,g.col.buffer,g.upto.buffer)
+    if (g.nrm){transfer.push(g.nrm.buffer)}
+  })
   return {msg:msg,transfer:transfer}
 }
 

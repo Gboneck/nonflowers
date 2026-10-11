@@ -16,14 +16,20 @@
 
         <header id="label">
           <p class="eyebrow" id="label-no">Nonflowers herbarium</p>
-          <h1 id="label-name">Growing the first specimens&hellip;</h1>
+          <div class="title-row">
+            <h1 id="label-name">Growing the first specimens&hellip;</h1>
+            <button type="button" id="star" aria-pressed="false" title="Star this specimen (S)" hidden>&#9734;</button>
+          </div>
           <p class="traits" id="label-traits"></p>
         </header>
 
         <div id="search-box">
           <label for="search" class="eyebrow">Search specimens</label>
           <input id="search" type="search" placeholder="name, colour, shrub, petals, seed&hellip;" autocomplete="off">
-          <button id="grow-seed" type="button" hidden></button>
+          <div class="search-actions">
+            <button id="starred-only" type="button" class="chip" aria-pressed="false">&#9733; Starred only</button>
+            <button id="grow-seed" type="button" hidden></button>
+          </div>
         </div>
 
         <p id="status" aria-live="polite"></p>

@@ -8,6 +8,7 @@
   --ink-soft: #5e6757;
   --rule: #c5cab8;
   --accent: #3b4e78;
+  --star: #a8792a;
   --display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
   --card: 128px;
@@ -78,6 +79,25 @@ body {
   gap: 6px;
 }
 
+.title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+#star {
+  pointer-events: auto;
+  flex: none;
+  background: transparent;
+  border: 0;
+  padding: 0 4px;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--ink-soft);
+}
+#star:hover { color: var(--star); }
+#star[aria-pressed="true"] { color: var(--star); }
+
 #label h1 {
   margin: 0;
   font-family: var(--display);
@@ -135,8 +155,26 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+.search-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 5px 10px;
+  color: var(--ink-soft);
+}
+.chip[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--sheet);
+}
+
 #grow-seed {
-  justify-self: start;
   background: var(--accent);
   color: var(--sheet);
   border: 0;
@@ -244,6 +282,15 @@ button:focus-visible {
   box-shadow: 0 1px 2px rgba(35, 41, 31, 0.18);
   overflow: hidden;
 }
+.card .badge {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-size: 18px;
+  color: var(--star);
+  text-shadow: 0 0 3px var(--sheet), 0 0 6px var(--sheet);
+}
+
 .card canvas {
   display: block;
   width: 100%;
