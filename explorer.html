@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Nonflowers Herbarium</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500;1,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" type="text/css" href="explorer.css">
+  </head>
+  <body>
+
+    <main id="app">
+      <section id="viewer" aria-label="3D specimen">
+        <canvas id="gl"></canvas>
+        <canvas id="painting" hidden></canvas>
+
+        <header id="label">
+          <p class="eyebrow" id="label-no">Nonflowers herbarium</p>
+          <h1 id="label-name">Growing the first specimens&hellip;</h1>
+          <p class="traits" id="label-traits"></p>
+        </header>
+
+        <div id="search-box">
+          <label for="search" class="eyebrow">Search specimens</label>
+          <input id="search" type="search" placeholder="name, colour, shrub, petals, seed&hellip;" autocomplete="off">
+          <button id="grow-seed" type="button" hidden></button>
+        </div>
+
+        <p id="status" aria-live="polite"></p>
+
+        <div id="view-tools">
+          <div class="toggle" role="group" aria-label="View">
+            <button type="button" id="mode-model" aria-pressed="true">Model</button>
+            <button type="button" id="mode-painting" aria-pressed="false">Painting</button>
+          </div>
+          <p class="hint">Drag to turn &middot; scroll or pinch to zoom &middot; double-click to reset</p>
+        </div>
+      </section>
+
+      <nav id="strip-wrap" aria-label="Specimens">
+        <button type="button" class="step" id="prev" aria-label="Previous specimen">&lsaquo;</button>
+        <div id="strip" role="listbox" aria-label="Specimens">
+          <button type="button" id="more" class="card more">Grow<br>more</button>
+        </div>
+        <button type="button" class="step" id="next" aria-label="Next specimen">&rsaquo;</button>
+      </nav>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="explorer.js"></script>
+  </body>
+</html>

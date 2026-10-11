@@ -7,9 +7,13 @@ Procedurally generated paintings of nonexistent flowers in Gongbi style for the 
 ![Screenshot1](/screenshots/screen01.jpg?raw=true "")
 
 
-## Slideshow
+## Herbarium explorer
 
-Open `slideshow.html` (or click the slideshow icon on the main page) to watch an endless series of nonflowers grow as 3D models that turn in space. Stems are round tubes. Each finished plant is pressed flat into a sheet of paper sized to fit the whole plant, where it becomes the painting, and is then pushed aside onto a pile before the next one grows. Press space to pause. The 3D view uses [three.js](https://threejs.org/), loaded from a CDN. URL options: `grow`, `spin` and `press` (seconds for each stage, defaults 10, 5 and 3), `hold` (seconds a finished painting rests, default 3) and `pile` (paintings kept on the pile, default 4), e.g. `slideshow.html?grow=14&spin=8`.
+Open `explorer.html` (or click the flower icon on the main page) to browse a growing collection of nonflowers. A strip of specimen cards along the bottom shows each plant's painting; the selected specimen grows as a 3D model above it that turns slowly. Drag to turn it, scroll or pinch to zoom, double-click to reset, and switch to "Painting" to see the 2D painting. Search by name, colour, habit (shrub or herb), petal count or seed, or type a seed number to grow that exact plant.
+
+Plants are grown in background workers (`plant-worker.js`) from seeds, so every specimen can be grown again exactly. The 3D models are rebuilt from the generator's own 3D geometry and drawn with [three.js](https://threejs.org/), loaded from a CDN.
+
+`slideshow.html` is an earlier version that grows one plant at a time and presses it into a painting.
 
 ## Description
 Nonflowers is a piece of software that procedurally generate drawings of nonexistent flowers. It attempts to capture the fascinating structures of plants and the delicate brushstrokes in [Gongbi paintings](https://en.wikipedia.org/wiki/Gongbi) with mathematical functions and procedural noises. Through parameterization and randomization, the algorithm is capable of generating a large variety of original plants. It is written in Javascript and uses HTML canvas to render its output. All the graphics are computed with polygons or using pixel-level manipulations, thus no preexisting asset or external library is used.
