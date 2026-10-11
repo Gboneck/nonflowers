@@ -5,22 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="main.js"></script>
     <script src="slideshow.js"></script>
-    <link rel="stylesheet" type="text/css" href="style.css">
     <link rel="stylesheet" type="text/css" href="slideshow.css">
     <title>Nonflowers Slideshow</title>
   </head>
   <body onload="startShow()">
 
-    <div id="loader">
-      <div id="spinner"></div>
-      <div id="load-text">Preparing paper...&nbsp;&nbsp;&nbsp;</div>
+    <div id="stage">
+      <div id="world">
+        <div id="floor"></div>
+        <div id="wall"></div>
+        <div id="easel">
+          <div class="easel" id="easel-b"></div>
+          <div class="easel" id="easel-l"></div>
+          <div class="easel" id="easel-r"></div>
+          <div class="easel" id="easel-ledge"></div>
+        </div>
+      </div>
     </div>
 
-    <div id="stage"></div>
+    <div id="loader">Preparing paper...</div>
 
-    <div id="controls" class="option-bar">
-      <i class="material-icons button" id="btn-pause" title="pause (space)" onclick="togglePause()">pause</i>
-      <a href="index.html"><i class="material-icons button" title="back to generator">home</i></a>
+    <div id="controls">
+      <button id="btn-pause" title="pause (space)" onclick="togglePause()">pause</button>
+      <a href="index.html" id="btn-home">generator</a>
     </div>
 
   </body>
