@@ -1,0 +1,94 @@
+:root {
+  --ink: rgba(0, 0, 0, 0.55);
+  --ink-strong: rgba(0, 0, 0, 0.8);
+  --chip: #ffffff;
+  --paper: #fdfbeb;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+}
+
+#stage {
+  --w: min(600px, 78vmin);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* the 3D flower is drawn over the whole stage, above the cards */
+#gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 500;
+}
+
+.card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--w);
+  height: var(--w);
+  margin: calc(var(--w) / -2) 0 0 calc(var(--w) / -2);
+  opacity: 0;
+  transition: transform 1.4s cubic-bezier(0.65, 0, 0.35, 1), opacity 1.4s;
+}
+
+.card canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(1px 2px 3px rgba(0, 0, 0, 0.2));
+}
+
+.card .caption {
+  margin-top: 4px;
+  text-align: right;
+  font-family: monospace;
+  color: var(--ink);
+}
+
+#loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: monospace;
+  color: var(--ink);
+}
+
+#controls {
+  position: absolute;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 1000;
+  display: flex;
+  gap: 8px;
+}
+
+#controls button, #controls a {
+  font: 13px monospace;
+  color: var(--ink);
+  background: var(--chip);
+  border: 0;
+  padding: 6px 14px;
+  box-shadow: 1px 1px 1px rgba(17, 17, 17, 0.13);
+  cursor: pointer;
+  text-decoration: none;
+}
+#controls button:hover, #controls a:hover,
+#controls button:focus-visible, #controls a:focus-visible {
+  color: var(--ink-strong);
+  outline: 1px solid var(--ink);
+}
